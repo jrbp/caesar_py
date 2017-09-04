@@ -447,13 +447,17 @@ class CaesarInputs(MSONable):
             ordered list of spins corresponding to each atom as a numpy array
         masses:
             ordered list of atomic masses corresponding to each atom as a numpy array
+    Optional Args:
+        displacement_amplitude:
+            amplitude of displacements to use in finite difference construction of force constant matrix
     """
-    def __init__(self, starting_structure, grid, symmetry, spins, masses):
+    def __init__(self, starting_structure, grid, symmetry, spins, masses, displacement_amplitude=None):
         self._starting_structure = starting_structure
         self._grid = grid
         self._symmetry = symmetry
         self._spins = spins
         self._masses = masses
+        self._displacement_amplitude = displacement_amplitude
 
     @property
     def starting_structure(self):
@@ -475,6 +479,11 @@ class CaesarInputs(MSONable):
     def masses(self):
         return self._masses
 
+    @property
+    def displacement_amplitude(self):
+        """returns none if none was given (caesar defaults are then used)"""
+        return self._displacement_amplitude
+
     @classmethod
     def from_files(cls, lte_dir):
         """
@@ -485,18 +494,25 @@ class CaesarInputs(MSONable):
         Returns:
             CaesarInputs object
         """
-        grid = np.genfromtxt(os.path.join(lte_dir, 'grid.dat'))
+        grid = np.genfromtxt(os.path.join(lte_dir, 'grid.dat'), skip_footer=1)
+
+        try:
+            displacement_amplitude = float(np.genfromtxt(os.path.join(lte_dir, 'grid.dat'), skip_header=1))
+        except TypeError:
+            displacement_amplitude = None
+
         symmetrydat = np.genfromtxt(os.path.join(lte_dir, 'symmetry.dat'), skip_header=1)
         symmetry = [ (np.array([m1,m2,m3]), t) for m1,m2,m3,t in izip(*[iter(symmetrydat)]*4) ]
         structure, masses, spins = readCaesarEquilibriumStructure(os.path.join(lte_dir, 'equilibrium.dat'), os.path.join(lte_dir, 'lattice.dat'))
-        return cls(structure, grid, symmetry, spins, masses)
+        return cls(structure, grid, symmetry, spins, masses, displacement_amplitude)
 
     def as_dict(self):
         return jsanitize(super(CaesarInputs, self).as_dict(),strict=True)
 
     @classmethod
     def from_dict(cls, d):
-        return cls(pmg.Structure.from_dict(d['starting_structure']), np.array(d['grid']), [(np.array(s[0]), np.array(s[1])) for s in d['symmetry']], d['spins'], d['masses'])
+        #optional args use get so they will be None if not set
+        return cls(pmg.Structure.from_dict(d['starting_structure']), np.array(d['grid']), [(np.array(s[0]), np.array(s[1])) for s in d['symmetry']], d['spins'], d['masses'], d.get('displacement_amplitude'))
 
     def get_super_equilibrium(self):
         tmpStruct = pmg.Structure.from_dict(self.starting_structure.as_dict())
